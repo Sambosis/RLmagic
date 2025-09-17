@@ -1,0 +1,169 @@
+import logging
+from typing import Union
+
+import gymnasium as gym
+from stable_baselines3 import PPO, DQN, SAC
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.evaluation import evaluate_policy
+
+from .config import Config
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class RLAgent:
+    """
+    Core class representing a Reinforcement Learning (RL) agent.
+    
+    This class wraps around RL frameworks like Stable-Baselines3, providing a high-level interface
+    for initializing, training, and evaluating RL agents based on a provided configuration.
+
+    Attributes:
+        config (Config): Parsed and validated configuration for the RL experiment.
+        model (object or None): The underlying RL model (e.g., PPO, DQN) instance. Initialized to None.
+        backend (str): The backend framework to use ('stable_baselines3' or 'rllib').
+    """
+
+    def __init__(self, config: Union[dict, Config]):
+        """
+        Initializes the RLAgent with the given configuration.
+
+        Args:
+            config (dict or Config): Configuration dictionary or Config object specifying the RL setup.
+            
+        Raises:
+            ValueError: If the configuration is invalid or the algorithm is unsupported.
+        """
+        if isinstance(config, dict):
+            self.config = Config(config)
+        elif isinstance(config, Config):
+            self.config = config
+        else:
+            raise ValueError("config must be a dict or Config instance.")
+
+        # Initialize model to None
+        self.model = None
+        
+        # Determine backend: Focus on stable_baselines3 for ['ppo', 'sac', 'dqn'], else raise error for now
+        supported_sb3 = {'ppo', 'sac', 'dqn'}
+        if self.config.algorithm in supported_sb3:
+            self.backend = 'stable_baselines3'
+        else:
+            raise NotImplementedError(f"Algorithm '{self.config.algorithm}' is not yet implemented. Supported in stable_baselines3: {supported_sb3}")
+
+        logger.info(f"RLAgent initialized with algorithm: {self.config.algorithm}, backend: {self.backend}")
+
+    def train(self, env: 'Environment', steps: int) -> dict:
+        """
+        Trains the RL agent for a specified number of steps.
+
+        Creates a vectorized environment from the provided Environment wrapper, initializes the model
+        if not already done, and performs training. Returns training metrics.
+
+        Args:
+            env (Environment): The environment wrapper object containing the Gym environment.
+            steps (int): Total number of timesteps to train for.
+            
+        Returns:
+            dict: Dictionary with training metrics, e.g., {'steps': steps, 'mean_reward': float}.
+            
+        Raises:
+            ValueError: If steps is not a positive integer.
+            RuntimeError: If model creation or training fails.
+        """
+        if steps <= 0 or not isinstance(steps, int):
+            raise ValueError("steps must be a positive integer.")
+
+        # Create vectorized environment (single env for simplicity; can extend for multi-env)
+        try:
+            vec_env = make_vec_env(lambda: env.env, n_envs=1)
+        except Exception as e:
+            raise RuntimeError(f"Failed to create vectorized environment: {e}")
+
+        # Determine policy based on model_type
+        model_type = self.config.model_type.lower()
+        if model_type == 'mlp':
+            policy = 'MlpPolicy'
+        elif model_type == 'cnn':
+            policy = 'CnnPolicy'
+        else:
+            raise ValueError(f"Unsupported model_type '{model_type}'. Supported: 'mlp', 'cnn'")
+
+        # Initialize model if not already done
+        if self.model is None:
+            try:
+                if self.config.algorithm == 'ppo':
+                    self.model = PPO(policy, vec_env, **self.config.hyperparams)
+                elif self.config.algorithm == 'dqn':
+                    self.model = DQN(policy, vec_env, **self.config.hyperparams)
+                elif self.config.algorithm == 'sac':
+                    self.model = SAC(policy, vec_env, **self.config.hyperparams)
+                else:
+                    raise ValueError(f"Unexpected algorithm: {self.config.algorithm}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize model: {e}")
+
+        # Train the model
+        logger.info(f"Starting training for {steps} steps...")
+        try:
+            self.model.learn(total_timesteps=steps)
+        except Exception as e:
+            raise RuntimeError(f"Training failed: {e}")
+
+        # Perform a quick evaluation on the trained model for metrics
+        try:
+            mean_reward, std_reward = evaluate_policy(self.model, vec_env, n_eval_episodes=10, deterministic=True)
+        except Exception as e:
+            logger.warning(f"Evaluation failed: {e}. Skipping metrics.")
+            mean_reward = None
+
+        logger.info(f"Training completed. Mean reward: {mean_reward if mean_reward else 'N/A'}")
+        
+        return {
+            'steps': steps,
+            'mean_reward': mean_reward if mean_reward is not None else 'N/A'
+        }
+
+    def evaluate(self, env: 'Environment', episodes: int) -> dict:
+        """
+        Evaluates the trained RL agent over a specified number of episodes.
+
+        Uses the evaluate_policy function to compute mean and std rewards.
+
+        Args:
+            env (Environment): The environment wrapper object containing the Gym environment.
+            episodes (int): Number of evaluation episodes.
+            
+        Returns:
+            dict: Dictionary with evaluation metrics, e.g., {'mean_reward': float, 'std_reward': float}.
+            
+        Raises:
+            ValueError: If episodes is not a positive integer or model is not trained.
+            RuntimeError: If evaluation fails.
+        """
+        if episodes <= 0 or not isinstance(episodes, int):
+            raise ValueError("episodes must be a positive integer.")
+        if self.model is None:
+            raise ValueError("Model not initialized. Please train the agent first.")
+
+        # Create vectorized environment for evaluation
+        try:
+            vec_env = make_vec_env(lambda: env.env, n_envs=1)
+        except Exception as e:
+            raise RuntimeError(f"Failed to create vectorized environment: {e}")
+
+        # Evaluate the model
+        logger.info(f"Evaluating model over {episodes} episodes...")
+        try:
+            mean_reward, std_reward = evaluate_policy(self.model, vec_env, n_eval_episodes=episodes, deterministic=True)
+        except Exception as e:
+            raise RuntimeError(f"Evaluation failed: {e}")
+
+        logger.info(f"Evaluation completed. Mean reward: {mean_reward}, Std reward: {std_reward}")
+        
+        return {
+            'mean_reward': mean_reward,
+            'std_reward': std_reward
+        }

@@ -1,0 +1,23 @@
+
+from easyrl import RLAgent, Environment
+from .config import config
+
+def main():
+    # Load environment
+    env = Environment(config["env_config"])
+    
+    # Initialize agent
+    agent = RLAgent(config)
+    
+    # Train the agent
+    print("Training agent...")
+    train_metrics = agent.train(env, steps=10000)
+    print("Training metrics:", train_metrics)
+    
+    # Evaluate the agent
+    print("Evaluating agent...")
+    eval_metrics = agent.evaluate(env, episodes=10)
+    print("Evaluation metrics:", eval_metrics)
+
+if __name__ == "__main__":
+    main()

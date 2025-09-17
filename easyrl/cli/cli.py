@@ -1,0 +1,223 @@
+"""
+easyrl/cli/cli.py
+
+This module implements the command-line interface for EasyRL using Typer and Rich.
+It provides an interactive way to set up RL experiments by gathering user inputs
+and generating boilerplate Python code files for training RL agents.
+
+The CLI allows users to:
+- Interactively select and configure RL algorithms.
+- Specify hyperparameters, model types, and environment settings.
+- Generate complete Python scripts and config files ready for execution.
+
+Dependencies:
+- Typer for CLI framework.
+- Rich for enhanced console output and prompting.
+
+Internal dependencies:
+- Config class from ..core.config for supported algorithms and validation.
+- RLAgent class from ..core.agent for generating code snippets.
+"""
+
+import json
+import os
+from typing import Dict, Any
+
+import typer
+from rich.console import Console
+from rich.prompt import Prompt, IntPrompt, FloatPrompt, Confirm
+
+from ..core.config import Config, load_config
+from ..core.agent import RLAgent
+
+# Initialize Typer app and Rich console
+app = typer.Typer()
+console = Console()
+
+# Get supported algorithms from Config class
+SUPPORTED_ALGORITHMS = sorted(Config.SUPPORTED_ALGORITHMS)
+
+
+def cli_setup() -> Dict[str, Any]:
+    """
+    Interactively gathers configuration inputs from the user via the CLI.
+
+    Prompts for:
+    - Algorithm selection from supported options with defaults.
+    - Hyperparameters as individual inputs (e.g., learning_rate, gamma).
+    - Environment configuration (e.g., env_name).
+    - Model type.
+
+    Uses Rich for styled prompts and validation against supported algorithms.
+
+    Returns:
+        dict: A configuration dictionary compatible with Config class.
+
+    Raises:
+        ValueError: If invalid inputs are provided during prompting.
+    """
+    console.print("[bold blue]EasyRL Setup Wizard[/bold blue]")
+    console.print("Let's configure your Reinforcement Learning experiment interactively.\n")
+
+    # 1. Select algorithm
+    algorithm_options = "\n".join([f"{i+1}. {alg}" for i, alg in enumerate(SUPPORTED_ALGORITHMS)])
+    console.print(f"Supported Algorithms:\n{algorithm_options}")
+    algorithm_index = IntPrompt.ask(
+        "Choose an algorithm (enter number)", choices=[str(i+1) for i in range(len(SUPPORTED_ALGORITHMS))]
+    )
+    algorithm = SUPPORTED_ALGORITHMS[algorithm_index - 1]
+    console.print(f"[green]Selected algorithm: {algorithm}[/green]\n")
+
+    # 2. Collect hyperparameters interactively
+    console.print("[bold]Hyperparameters[/bold]")
+    learning_rate = FloatPrompt.ask("Learning rate (default 3e-4)", default=3e-4)
+    gamma = FloatPrompt.ask("Gamma (discount factor, default 0.99)", default=0.99)
+    batch_size = IntPrompt.ask("Batch size (default 64)", default=64)
+    hyperparams = {
+        "learning_rate": learning_rate,
+        "gamma": gamma,
+        "batch_size": batch_size,
+    }
+    console.print(f"[green]Hyperparameters set: {hyperparams}[/green]\n")
+
+    # 3. Environment config
+    console.print("[bold]Environment Configuration[/bold]")
+    env_name = Prompt.ask("Environment name (e.g., 'CartPole-v1')", default="CartPole-v1")
+    env_config = {"env_name": env_name}
+    console.print(f"[green]Environment config set: {env_config}[/green]\n")
+
+    # 4. Model type
+    model_type = Prompt.ask("Model type (e.g., 'mlp' or 'cnn')", default="mlp")
+    console.print(f"[green]Model type set: {model_type}[/green]\n")
+
+    # Compile and validate config
+    config = {
+        "algorithm": algorithm,
+        "hyperparams": hyperparams,
+        "model_type": model_type,
+        "env_config": env_config,
+    }
+    try:
+        Config(config)  # Validate via Config class
+    except ValueError as e:
+        console.print(f"[red]Configuration error: {e}[/red]")
+        raise
+    console.print("[green]Configuration validated successfully![/green]\n")
+    return config
+
+
+def generate_code(config: Dict[str, Any], output_dir: str) -> None:
+    """
+    Generates complete Python code files for an RL agent based on the provided config.
+
+    Creates the following files in the specified output_dir:
+    - __init__.py: Empty init file to make the directory a package.
+    - config.py: Python file defining the config dictionary.
+    - main.py: Script to import RLAgent, initialize with config, and demonstrate training/evaluation.
+    - run.py: Executable script to load config and run training.
+
+    Args:
+        config (dict): Configuration dictionary for the RL experiment.
+        output_dir (str): Directory path where files will be created. Created if it doesn't exist.
+
+    Raises:
+        OSError: If unable to create directories or write files.
+    """
+    console.print(f"[bold]Generating code in directory: {output_dir}[/bold]")
+
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # File 1: __init__.py
+    init_path = os.path.join(output_dir, "__init__.py")
+    with open(init_path, "w") as f:
+        f.write('"""\nRL Experiment Package\n\nAuto-generated by EasyRL CLI.\n"""\n')
+    console.print(f"Created: {init_path}")
+
+    # File 2: config.py
+    config_path = os.path.join(output_dir, "config.py")
+    config_str = f"""
+# config.py
+# Auto-generated configuration for RL experiment
+
+config = {json.dumps(config, indent=4)}
+"""
+    with open(config_path, "w") as f:
+        f.write(config_str)
+    console.print(f"Created: {config_path}")
+
+    # File 3: main.py
+    main_path = os.path.join(output_dir, "main.py")
+    main_content = f"""
+# main.py
+# Auto-generated script for RL training and evaluation
+
+from easyrl import RLAgent, Environment
+from .config import config
+
+def main():
+    # Load environment
+    env = Environment(config["env_config"])
+    
+    # Initialize agent
+    agent = RLAgent(config)
+    
+    # Train the agent
+    print("Training agent...")
+    train_metrics = agent.train(env, steps=10000)
+    print("Training metrics:", train_metrics)
+    
+    # Evaluate the agent
+    print("Evaluating agent...")
+    eval_metrics = agent.evaluate(env, episodes=10)
+    print("Evaluation metrics:", eval_metrics)
+
+if __name__ == "__main__":
+    main()
+"""
+    with open(main_path, "w") as f:
+        f.write(main_content)
+    console.print(f"Created: {main_path}")
+
+    # File 4: run.py
+    run_path = os.path.join(output_dir, "run.py")
+    run_content = f"""
+# run.py
+# Auto-generated executable script to run the RL experiment
+
+from main import main
+
+if __name__ == "__main__":
+    main()
+"""
+    with open(run_path, "w") as f:
+        f.write(run_content)
+    console.print(f"Created: {run_path}")
+
+    console.print("[green]Code generation complete! You can now run 'python run.py' in the directory.[/green]")
+
+
+@app.command()
+def setup(output_dir: str = typer.Option("./rl_experiment", help="Directory to save generated code."), config_file: str = typer.Option(None, help="Path to JSON config file for non-interactive mode.")):
+    """
+    Interactive setup command for EasyRL.
+
+    Gathers configuration inputs interactively or from JSON file, validates them, and generates
+    ready-to-run Python code files in the specified output directory.
+
+    Args:
+        output_dir (str): Path to the output directory for generated files.
+        config_file (str, optional): Path to JSON config file. If provided, skips interactive prompts.
+    """
+    if config_file:
+        config = load_config(config_file)
+    else:
+        config = cli_setup()
+    if config_file or Confirm.ask("Proceed to generate code with this configuration?"):
+        generate_code(config, output_dir)
+    else:
+        console.print("[yellow]Setup cancelled.[/yellow]")
+
+
+if __name__ == "__main__":
+    app()
