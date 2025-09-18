@@ -15,13 +15,17 @@ EasyRL is a user-friendly Python library that simplifies the implementation and 
 
 ## Installation
 
-Install EasyRL directly from source:
+EasyRL now uses [uv](https://github.com/astral-sh/uv) for dependency management. Create an isolated environment and install the
+package in editable mode:
 
 ```bash
-pip install .
+uv venv
+source .venv/bin/activate
+uv pip install -e .
 ```
 
-Ensure you have the required dependencies installed, such as Stable-Baselines3, Ray RLlib, Gym, PyTorch, Typer, and Rich.
+The installation command will resolve and install all runtime and development dependencies defined in `pyproject.toml`, such as
+Stable-Baselines3, Ray RLlib, Gymnasium, PyTorch, Typer, and Rich.
 
 ## Usage Examples
 
