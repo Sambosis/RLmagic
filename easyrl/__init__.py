@@ -23,4 +23,4 @@ from .core.config import Config, load_config
 # CLI tools
 # from .cli.cli import generate_code, cli_setup  # Commented to avoid typer import
 
-__version__ = "1.0.0"  # Placeholder version; update as needed.
+__version__ = "0.1.0"  # Keep in sync with the pyproject metadata.
