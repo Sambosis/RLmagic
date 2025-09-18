@@ -2,6 +2,7 @@ import logging
 from typing import Union
 
 from .config import Config
+from stable_baselines3.common.env_util import make_vec_env
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)

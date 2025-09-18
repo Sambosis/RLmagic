@@ -1,6 +1,0 @@
-import sys; sys.path.insert(0, ".")
-from easyrl.core.config import load_config
-from easyrl.cli.cli import generate_code
-config = load_config("sample_config.json")
-print("Config loaded:", config)
-generate_code(config, "test_dir")
